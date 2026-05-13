@@ -76,9 +76,15 @@ class RdkYoloV8:
 
     def _preprocess(self, frame_bgr: np.ndarray) -> np.ndarray:
         resized = cv2.resize(frame_bgr, (self._input_w, self._input_h), interpolation=cv2.INTER_LINEAR)
-        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        # BPU 输入：uint8，增加 batch 维度
-        return rgb.astype(np.uint8)[np.newaxis, ...]
+        # bayese NV12 模型要求 YUV NV12 输入
+        yuv = cv2.cvtColor(resized, cv2.COLOR_BGR2YUV_I420)
+        # I420 → NV12：U/V 平面交错
+        h, w = self._input_h, self._input_w
+        y = yuv[:h, :]
+        uv_i420 = yuv[h:, :].reshape(-1, 2)
+        uv_nv12 = uv_i420[:, [0, 1]].reshape(h // 2, w)
+        nv12 = np.vstack([y, uv_nv12])
+        return nv12.astype(np.uint8)[np.newaxis, ...]
 
     def _parse_output(self, outputs, conf_th: float, only_person: bool) -> List[Detection]:
         """解析 BPU 输出张量。
