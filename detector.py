@@ -2,7 +2,9 @@ import cv2
 import threading
 import time
 import atexit
+import numpy as np
 
+from hobot_vio import libsrcampy as srcampy
 from rdk_infer import RdkYoloV8
 from config import MODEL_BIN, WIDTH, HEIGHT
 
@@ -20,12 +22,12 @@ def _get_rdk_engine():
 
 
 class AIDetector:
-    def __init__(self, device: str = "/dev/video8"):
-        self.device = device
+    def __init__(self):
         self.latest_frame = None
         self.latest_results = []
         self.running = True
         self._cleaned = False
+        self._cam = None
 
         self.infer_engine = _get_rdk_engine()
 
@@ -35,38 +37,31 @@ class AIDetector:
         atexit.register(self.cleanup)
 
     def _read_stream(self):
-        cap = None
+        cam = srcampy.Camera()
+        # 参数：pipeline=0, 分辨率宽, 高, 格式(0=NV12)
+        ret = cam.open_cam(0, WIDTH, HEIGHT, 0)
+        if ret != 0:
+            print(f"[Camera] open_cam 失败，返回码: {ret}")
+            return
+        self._cam = cam
+        print(f"[Camera] 已打开摄像头 {WIDTH}x{HEIGHT}")
 
-        def _open():
-            c = cv2.VideoCapture(self.device, cv2.CAP_V4L2)
-            if c.isOpened():
-                c.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
-                c.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
-                c.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                return c
-            c.release()
-            return None
-
-        while self.running and cap is None:
-            cap = _open()
-            if cap is None:
-                time.sleep(0.2)
-
-        while self.running and cap is not None:
-            ret, frame = cap.read()
-            if ret:
-                self.latest_frame = frame
-            else:
+        while self.running:
+            try:
+                # get_img 返回 NV12 bytes
+                raw = cam.get_img(2)  # type=2 → NV12
+                if raw is None:
+                    time.sleep(0.01)
+                    continue
+                # NV12 → BGR
+                nv12 = np.frombuffer(raw, dtype=np.uint8).reshape(HEIGHT * 3 // 2, WIDTH)
+                bgr = cv2.cvtColor(nv12, cv2.COLOR_YUV2BGR_NV12)
+                self.latest_frame = bgr
+            except Exception as e:
+                print(f"[Camera] 读帧失败: {e}")
                 time.sleep(0.05)
-                cap.release()
-                cap = None
-                while self.running and cap is None:
-                    cap = _open()
-                    if cap is None:
-                        time.sleep(0.2)
 
-        if cap is not None:
-            cap.release()
+        cam.close_cam()
 
     def _infer_loop(self):
         last_ts = 0.0
@@ -99,4 +94,9 @@ class AIDetector:
         self._cleaned = True
         print("正在清理资源...")
         self.running = False
+        if self._cam:
+            try:
+                self._cam.close_cam()
+            except Exception:
+                pass
         print("DEBUG: 资源清理完成.")
