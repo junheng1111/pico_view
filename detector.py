@@ -40,12 +40,14 @@ class AIDetector:
         cam = srcampy.Camera()
         # 参数：pipeline=0, 分辨率宽, 高, 格式(0=NV12)
         # open_cam(pipe_id, video_index, fps, width, height)
-        ret = cam.open_cam(0, 1, 30, WIDTH, HEIGHT)
+        # IMX219 接在 mipi_host:0，对应 video_index=0，支持分辨率 1920x1080
+        ret = cam.open_cam(0, 0, 30, 1920, 1080)
         if ret != 0:
             print(f"[Camera] open_cam 失败，返回码: {ret}")
             return
+        cam_w, cam_h = 1920, 1080
         self._cam = cam
-        print(f"[Camera] 已打开摄像头 {WIDTH}x{HEIGHT}")
+        print(f"[Camera] 已打开摄像头 {cam_w}x{cam_h}")
 
         while self.running:
             try:
@@ -55,7 +57,7 @@ class AIDetector:
                     time.sleep(0.01)
                     continue
                 # NV12 → BGR
-                nv12 = np.frombuffer(raw, dtype=np.uint8).reshape(HEIGHT * 3 // 2, WIDTH)
+                nv12 = np.frombuffer(raw, dtype=np.uint8).reshape(cam_h * 3 // 2, cam_w)
                 bgr = cv2.cvtColor(nv12, cv2.COLOR_YUV2BGR_NV12)
                 self.latest_frame = bgr
             except Exception as e:
