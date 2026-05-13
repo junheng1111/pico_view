@@ -39,7 +39,7 @@ class AIDetector:
     def _read_stream(self):
         cam = srcampy.Camera()
         # 参数：pipeline=0, 分辨率宽, 高, 格式(0=NV12)
-        ret = cam.open_cam(0, WIDTH, HEIGHT, 0)
+        ret = cam.open_cam(1, WIDTH, HEIGHT, 0)
         if ret != 0:
             print(f"[Camera] open_cam 失败，返回码: {ret}")
             return
